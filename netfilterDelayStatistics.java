@@ -6,6 +6,10 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.HashMap;
 
+/**
+ * @author Carolina de Senne Garcia
+ */
+
 public class netfilterDelayStatistics {
 
 	/* String pattern for SOCKADDR line*/
