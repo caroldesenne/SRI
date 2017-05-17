@@ -1,7 +1,9 @@
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.util.Map;
 import java.util.HashMap;
@@ -45,7 +47,16 @@ public class netfilterDelayStatistics {
 
 		// Process File
 		ProcessLogFile(saddrP,netfilterP);
-		//printDelayMap();
+
+		// Print Delay Map to File
+		try {
+			BufferedWriter bw = new BufferedWriter(new FileWriter("delayMap"));
+			printDelayMap(bw);
+			bw.close();
+		} catch (IOException e) {
+			System.err.println(e.getMessage());
+			System.err.println("Error opening delay file");
+		}
 
 		// Calculate mean and variance for delays
 		double[] statistics = calculateStatistics();
@@ -87,9 +98,15 @@ public class netfilterDelayStatistics {
 	 * Print the Delay Map in the following format:
 	 * key : value
 	 */
-	public static void printDelayMap() {
-		for(Map.Entry<Integer,Integer> entry: delayOccurences.entrySet()) {
-			System.out.println(entry.getKey()+" : "+entry.getValue());
+	public static void printDelayMap(BufferedWriter bw) {
+		String delayMap = "";
+		for(Map.Entry<Integer,Integer> entry: delayOccurences.entrySet())
+			delayMap += Integer.toString(entry.getKey())+" : "+Integer.toString(entry.getValue())+"\n";
+		try {
+			bw.write(delayMap);
+		} catch(IOException e) {
+			System.err.println(e.getMessage());
+			System.err.println("Problem writing delay map to file");
 		}
 	}
 
@@ -195,7 +212,7 @@ public class netfilterDelayStatistics {
 	 * Open a file and returns its respective BufferReader
 	 *
 	 * @param path to file to be opened
-	 * @returns buffer to read the log file explicited in path
+	 * @return buffer to read the log file explicited in path
 	 */
 	public static BufferedReader openFile(String path) {
 		FileReader fr = null;
