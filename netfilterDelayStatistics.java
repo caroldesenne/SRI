@@ -12,16 +12,18 @@ import java.util.HashMap;
 
 public class netfilterDelayStatistics {
 
+	/* ---------------------- GLOBAL VARIABLES ---------------------- */
+
 	/* String pattern for SOCKADDR line*/
-	public static final String sockaddrLine = "^type=SOCKADDR(?:.+)saddr=(.+)\\s?$";
-	public static final String sockaddrLineExample = "type=SOCKADDR msg=audit(1494523111.293:1661796): saddr=01002F686F6D652F6361726F6C2F2E676E7570672F532E6770672D6167656E74";
+	public static final String sockaddrLine = "^type=SOCKADDR(?:.+)saddr=(.+)$";
+	//public static final String sockaddrLineExample = "type=SOCKADDR msg=audit(1494523111.293:1661796): saddr=01002F686F6D652F6361726F6C2F2E676E7570672F532E6770672D6167656E74";
 
 	/* String pattern for NETFILTER_PKT line*/
 	public static final String netfilterPktLine = "^type=NETFILTER_PKT(?:.+)?daddr=(\\d+\\.\\d+\\.\\d+\\.\\d+)(?:.+)?dport=(\\d+)$";
-	public static final String netfilterPktLineExample = "type=NETFILTER_PKT msg=audit(1494469680.359:1606788): action=0 hook=1 len=76 inif=enp0s3 outif=? smac=52:54:00:12:35:02 dmac=08:00:27:1d:e8:ec macproto=0x0800 saddr=91.189.89.199 daddr=10.0.2.15 ipid=31284 proto=17 sport=123 dport=58139";
+	//public static final String netfilterPktLineExample = "type=NETFILTER_PKT msg=audit(1494469680.359:1606788): action=0 hook=1 len=76 inif=enp0s3 outif=? smac=52:54:00:12:35:02 dmac=08:00:27:1d:e8:ec macproto=0x0800 saddr=91.189.89.199 daddr=10.0.2.15 ipid=31284 proto=17 sport=123 dport=58139";
 
 	/* String with the path to log file */
-	public static final String logPath = "/var/log/audit/audit.log.2";
+	public static final String logPath = "/var/log/audit/audit.log";
 
 	/* Map to keep track of processed SOCKADDR records (IP:port)  and their respective line number in the log file*/
 	public static Map<String, Integer> sockaddrToLineNumber = new HashMap<String,Integer>();
@@ -29,7 +31,8 @@ public class netfilterDelayStatistics {
 	/* Map from the delays found (in terms of records or lines) between SOCKADDR and first respective NETFILTER and number of occurences */
 	public static Map<Integer, Integer> delayOccurences = new HashMap<Integer,Integer>();
 
-	// Main function
+	/* ----------------------- FUNCTIONS --------------------------- */
+
 	public static void main(String[] args) {
 		
 		// Patterns
@@ -42,10 +45,11 @@ public class netfilterDelayStatistics {
 
 		// Process File
 		ProcessLogFile(saddrP,netfilterP);
-		printDelayMap();
+		//printDelayMap();
 
 		// Calculate mean and variance for delays
 		double[] statistics = calculateStatistics();
+		System.out.println("Mean = "+statistics[0]+"\nVariance= "+statistics[1]);
 
 	}
 
@@ -106,10 +110,10 @@ public class netfilterDelayStatistics {
 					//System.out.println(countLine+": "+line);
 					if(line.startsWith("type=SOCKADDR")) {
 						treatSockaddrLine(address_port,countLine);
-						//System.out.println("SADDR -> "+address_port);
+						//System.out.println("SOCKADDR -> "+address_port);
 					} else if(line.startsWith("type=NETFILTER_PKT")) {
 						treatNetfilterLine(address_port,countLine);
-						//System.out.println("NETFI -> "+address_port);
+						//System.out.println("NETFILTER_PKT -> "+address_port);
 					}
 				}
 				countLine++;
@@ -127,7 +131,7 @@ public class netfilterDelayStatistics {
 	 * @param currentLine line number of the record in the log file
 	 */
 	public static void treatSockaddrLine(String addr, int currentLine) {
-		sockaddrToLineNumber.put(addr,currentLine);
+		sockaddrToLineNumber.put(addr,currentLine);	
 	}
 
 	/**
@@ -142,8 +146,8 @@ public class netfilterDelayStatistics {
 	public static void treatNetfilterLine(String addr, int currentLine) {
 		Integer previousLine = null;
 		if((previousLine = sockaddrToLineNumber.remove(addr)) != null) {
-			System.out.println("Miracle: found a match!");
 			Integer delay = currentLine-previousLine;
+			//System.out.println("Miracle: found a match! Delay = "+delay);
 			Integer Occurences = delayOccurences.remove(delay);
 			if(Occurences == null)
 				Occurences = new Integer(0);
@@ -173,8 +177,8 @@ public class netfilterDelayStatistics {
 		Matcher netfilterM = netfilterP.matcher(line);
 		if(sockaddM.find()) {
 			String saddr = sockaddM.group(1);
-			if(saddr.length() >= 47)
-				return saddr.substring(40,48)+":"+saddr.substring(4,8);
+			if(saddr.length() >= 15)
+				return saddr.substring(8,16)+":"+saddr.substring(4,8);
 		} else if(netfilterM.find()) {
 			String res = "";
 			String[] IPfields = netfilterM.group(1).split("\\.");
