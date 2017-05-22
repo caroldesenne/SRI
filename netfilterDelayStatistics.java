@@ -1,5 +1,6 @@
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
+import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.BufferedReader;
@@ -45,8 +46,8 @@ public class netfilterDelayStatistics {
 		//System.out.println(parseLineToAddressString(netfilterPktLineExample, saddrP, netfilterP));
 		//System.out.println(parseLineToAddressString(sockaddrLineExample, saddrP, netfilterP));
 
-		// Process File
-		ProcessLogFile(saddrP,netfilterP);
+		// Process Files
+		ProcessAllLogFiles(saddrP,netfilterP);
 
 		// Print Delay Map to File
 		try {
@@ -111,14 +112,42 @@ public class netfilterDelayStatistics {
 	}
 
 	/**
-	 * Read lines from log file and process each SOCKADDR and NETFILTER records 
+	 * Opens all log files from the oldest to the newest and send them to be processed in ProcessLogFile
+	 *
+	 * @param saddrP SOCKADDR record pattern
+	 * @param netfilterP NETFILTER record patter
+	 */
+	public static void ProcessAllLogFiles(Pattern saddrP, Pattern netfilterP) {
+		// Find the oldest log file
+		int count =1;
+		boolean end = false;
+		while(!end) {
+			File f = new File(logPath+"."+Integer.toString(count));
+			if(f.exists()) {
+				count++;
+			} else {
+				end = true;
+			}
+		}
+		// send log files in the right order to be processed
+		BufferedReader buffer = null;
+		int countLine = 1;
+		for(int i = count-1; i > 0; i--) {
+			buffer = openFile(logPath+"."+Integer.toString(i));
+			countLine = ProcessLogFile(saddrP,netfilterP,buffer,countLine);
+		}
+		buffer = openFile(logPath);
+		ProcessLogFile(saddrP,netfilterP,buffer,countLine);
+	}
+
+	/**
+	 * Read lines from log file n buffer and process each SOCKADDR and NETFILTER records 
 	 * 
 	 * @param saddrP SOCKADDR record pattern
 	 * @param netfilterP NETFILTER record pattern 
+	 * @param buffer from where lines should be read
 	 */
-	public static void ProcessLogFile(Pattern saddrP, Pattern netfilterP) {
-		BufferedReader buffer = openFile(logPath);
-		int countLine = 1;
+	public static int ProcessLogFile(Pattern saddrP, Pattern netfilterP, BufferedReader buffer, int countLine) {
 		String line;
 		String address_port;
 		try {
@@ -139,6 +168,7 @@ public class netfilterDelayStatistics {
 			System.err.println(e.getMessage());
 			System.err.println("Problem reading file");
 		}
+		return countLine;
 	}
 
 	/**
