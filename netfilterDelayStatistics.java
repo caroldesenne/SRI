@@ -133,9 +133,11 @@ public class netfilterDelayStatistics {
 		BufferedReader buffer = null;
 		int countLine = 1;
 		for(int i = count-1; i > 0; i--) {
+			System.out.println("Processing "+logPath+"."+i+"...");
 			buffer = openFile(logPath+"."+Integer.toString(i));
 			countLine = ProcessLogFile(saddrP,netfilterP,buffer,countLine);
 		}
+		System.out.println("Processing "+logPath+"...");
 		buffer = openFile(logPath);
 		ProcessLogFile(saddrP,netfilterP,buffer,countLine);
 	}
@@ -194,7 +196,7 @@ public class netfilterDelayStatistics {
 		Integer previousLine = null;
 		if((previousLine = sockaddrToLineNumber.remove(addr)) != null) {
 			Integer delay = currentLine-previousLine;
-			//System.out.println("Miracle: found a match! Delay = "+delay);
+			System.out.println("Miracle: found a match! Delay = "+delay);
 			Integer Occurences = delayOccurences.remove(delay);
 			if(Occurences == null)
 				Occurences = new Integer(0);
@@ -249,8 +251,9 @@ public class netfilterDelayStatistics {
 		try {
 			fr = new FileReader(path);
 		} catch(IOException e) {
-			System.err.println(e.getMessage());
-			System.err.println("Couldn't open the log file: "+path);
+			//System.err.println(e.getMessage());
+			//System.err.println("Couldn't open the log file: "+path);
+			return null;
 		}
 		return new BufferedReader(fr);
 	}
