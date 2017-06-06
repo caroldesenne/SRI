@@ -7,7 +7,9 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.util.Map;
+import java.util.Set;
 import java.util.HashMap;
+import java.util.HashSet;
 
 /**
  * @author Carolina de Senne Garcia
@@ -17,9 +19,13 @@ public class netfilterDelayStatistics {
 
 	/* ---------------------- GLOBAL VARIABLES ---------------------- */
 
+	/* String patter for SYSCALL CONNECT line */
+	public static final String syscallConnectLine = "^type=SYSCALL msg=audit\\((.+)\\)(?:.*)syscall=42(?:.*)$";
+	public static final String syscallLineExample = "type=SYSCALL msg=audit(1496447381.681:6005304): arch=c000003e syscall=42 success=yes exit=0 a0=5 a1=7f9f8ca59680 a2=6e a3=7f9f8ca54f20 items=1 ppid=3356 pid=4172 auid=1001 uid=0 gid=1001 euid=0 suid=0 fsuid=0 egid=1001 sgid=1001 fsgid=1001 tty=pts0 ses=3 key=(null)";
+
 	/* String pattern for SOCKADDR line*/
-	public static final String sockaddrLine = "^type=SOCKADDR(?:.+)saddr=(.+)$";
-	//public static final String sockaddrLineExample = "type=SOCKADDR msg=audit(1494523111.293:1661796): saddr=01002F686F6D652F6361726F6C2F2E676E7570672F532E6770672D6167656E74";
+	public static final String sockaddrLine = "^type=SOCKADDR msg=audit\\((.+)\\)(?:.+)saddr=(.+)$";
+	public static final String sockaddrLineExample = "type=SOCKADDR msg=audit(1494523111.293:1661796): saddr=01002F686F6D652F6361726F6C2F2E676E7570672F532E6770672D6167656E74";
 
 	/* String pattern for NETFILTER_PKT line*/
 	public static final String netfilterPktLine = "^type=NETFILTER_PKT(?:.+)?daddr=(\\d+\\.\\d+\\.\\d+\\.\\d+)(?:.+)?dport=(\\d+)$";
@@ -31,38 +37,74 @@ public class netfilterDelayStatistics {
 	/* Map to keep track of processed SOCKADDR records (IP:port)  and their respective line number in the log file*/
 	public static Map<String, Integer> sockaddrToLineNumber = new HashMap<String,Integer>();
 
+	/* Map to keep track of processed TCP SOCKADDR records (IP:port)  and their respective line number in the log file*/
+	public static Map<String, Integer> TCPsockaddrToLineNumber = new HashMap<String,Integer>();
+
+	/* Map to keep track of processed UDP SOCKADDR records (IP:port)  and their respective line number in the log file*/
+	public static Map<String, Integer> UDPsockaddrToLineNumber = new HashMap<String,Integer>();
+
+	/* Set to keep track of SYSCALL CONNECT timestamps, to identify SOCKADDR that correspond to TCP */
+	public static Set<String> timestampsFound = new HashSet<String>();
+
 	/* Map from the delays found (in terms of records or lines) between SOCKADDR and first respective NETFILTER and number of occurences */
 	public static Map<Integer, Integer> delayOccurences = new HashMap<Integer,Integer>();
+
+	public static Map<Integer, Integer> TCPdelayOccurences = new HashMap<Integer,Integer>();
+
+	public static Map<Integer, Integer> UDPdelayOccurences = new HashMap<Integer,Integer>();
 
 	/* ----------------------- FUNCTIONS --------------------------- */
 
 	public static void main(String[] args) {
 		
 		// Patterns
+		Pattern syscallP = Pattern.compile(syscallConnectLine);
 		Pattern saddrP = Pattern.compile(sockaddrLine);
 		Pattern netfilterP = Pattern.compile(netfilterPktLine);
 
 		// Pattern Tests
 		//System.out.println(parseLineToAddressString(netfilterPktLineExample, saddrP, netfilterP));
 		//System.out.println(parseLineToAddressString(sockaddrLineExample, saddrP, netfilterP));
+		//System.out.println(parseLineToTimeStamp(syscallLineExample, syscallP, saddrP));
+		//System.out.println(parseLineToTimeStamp(sockaddrLineExample, syscallP, saddrP));
 
 		// Process Files
-		ProcessAllLogFiles(saddrP,netfilterP);
+		ProcessAllLogFiles(syscallP,saddrP,netfilterP);
+		System.out.println(sockaddrToLineNumber.size());
+		System.out.println(TCPsockaddrToLineNumber.size());
+		System.out.println(UDPsockaddrToLineNumber.size());
 
 		// Print Delay Map to File
-		try {
-			BufferedWriter bw = new BufferedWriter(new FileWriter("delayMap"));
-			printDelayMap(bw);
-			bw.close();
-		} catch (IOException e) {
-			System.err.println(e.getMessage());
-			System.err.println("Error opening delay file");
-		}
+		printDelayMap("delayMap",0);
+		printDelayMap("TCPdelayMap",1);
+		printDelayMap("UDPdelayMap",2);
 
 		// Calculate mean and variance for delays
 		double[] statistics = calculateStatistics();
 		System.out.println("Mean = "+statistics[0]+"\nVariance= "+statistics[1]);
 
+	}
+
+	/**
+	 * Opens file and saves the delayOccurence map corresponding to type in the file
+	 * type can be: 0 (for both UDP and TCP)
+	 * 							1 (for TCP)
+	 *							2 (for UDP)
+	 * @param filename of the file to where should write delay content
+	 * @param type of the delayMap that should be recorded (0,1 or 2)
+	 *
+	 */
+	public static void printDelayMap(String filename, int type) {
+		BufferedWriter bw;
+		try {
+			bw = new BufferedWriter(new FileWriter(filename));
+			printDelayMap(bw,type);
+			bw.close();
+			System.out.println("Saved file: "+filename);
+		} catch (IOException e) {
+			System.err.println(e.getMessage());
+			System.err.println("Error opening delay file");
+		}
 	}
 
 	/**
@@ -98,10 +140,25 @@ public class netfilterDelayStatistics {
 	/**
 	 * Print the Delay Map in the following format:
 	 * key : value
+	 * 
+	 * @param bw BufferedWriter that points to the file to be written
+	 * @param type of the Map (TCP = 1, UDP = 2 or both = 0) to be recorded
+	 *
 	 */
-	public static void printDelayMap(BufferedWriter bw) {
+	public static void printDelayMap(BufferedWriter bw, int type) {
+		Map<Integer,Integer> map = null;
+		if(type == 0) { // both types
+			map = delayOccurences;
+		} else if(type == 1) { // TCP
+			map = TCPdelayOccurences;
+		} else if(type == 2) { // UDP
+			map = UDPdelayOccurences;
+		} else {
+			System.err.println("Bad delayMap type!");
+			return;
+		}
 		String delayMap = "";
-		for(Map.Entry<Integer,Integer> entry: delayOccurences.entrySet())
+		for(Map.Entry<Integer,Integer> entry: map.entrySet())
 			delayMap += Integer.toString(entry.getKey())+" : "+Integer.toString(entry.getValue())+"\n";
 		try {
 			bw.write(delayMap);
@@ -117,7 +174,7 @@ public class netfilterDelayStatistics {
 	 * @param saddrP SOCKADDR record pattern
 	 * @param netfilterP NETFILTER record patter
 	 */
-	public static void ProcessAllLogFiles(Pattern saddrP, Pattern netfilterP) {
+	public static void ProcessAllLogFiles(Pattern syscallP, Pattern saddrP, Pattern netfilterP) {
 		// Find the oldest log file
 		int count =1;
 		boolean end = false;
@@ -135,11 +192,11 @@ public class netfilterDelayStatistics {
 		for(int i = count-1; i > 0; i--) {
 			System.out.println("Processing "+logPath+"."+i+"...");
 			buffer = openFile(logPath+"."+Integer.toString(i));
-			countLine = ProcessLogFile(saddrP,netfilterP,buffer,countLine);
+			countLine = ProcessLogFile(syscallP,saddrP,netfilterP,buffer,countLine);
 		}
 		System.out.println("Processing "+logPath+"...");
 		buffer = openFile(logPath);
-		ProcessLogFile(saddrP,netfilterP,buffer,countLine);
+		ProcessLogFile(syscallP,saddrP,netfilterP,buffer,countLine);
 	}
 
 	/**
@@ -149,16 +206,30 @@ public class netfilterDelayStatistics {
 	 * @param netfilterP NETFILTER record pattern 
 	 * @param buffer from where lines should be read
 	 */
-	public static int ProcessLogFile(Pattern saddrP, Pattern netfilterP, BufferedReader buffer, int countLine) {
+	public static int ProcessLogFile(Pattern syscallP, Pattern saddrP, Pattern netfilterP, BufferedReader buffer, int countLine) {
 		String line;
 		String address_port;
+		String timeStamp;
+		int protocol = -1; // 0 = TCP
+											 // 1 = UDP
+											 // -1 not defined
 		try {
 			while((line = buffer.readLine()) != null) {
+				if((timeStamp = parseLineToTimeStamp(line,syscallP,saddrP)) != null) {
+					if(line.startsWith("type=SYSCALL")) {
+						timestampsFound.add(timeStamp);
+					} else if(line.startsWith("type=SOCKADDR")) {
+						if(timestampsFound.remove(timeStamp)) {
+							protocol = 0; 
+						} else {
+							protocol = 1;
+						}	
+					}
+				}
 				if((address_port = parseLineToAddressString(line,saddrP,netfilterP)) != null) {
 					//System.out.println(countLine+": "+line);
 					if(line.startsWith("type=SOCKADDR")) {
-						treatSockaddrLine(address_port,countLine);
-						//System.out.println("SOCKADDR -> "+address_port);
+						treatSockaddrLine(address_port,countLine,protocol);
 					} else if(line.startsWith("type=NETFILTER_PKT")) {
 						treatNetfilterLine(address_port,countLine);
 						//System.out.println("NETFILTER_PKT -> "+address_port);
@@ -179,8 +250,13 @@ public class netfilterDelayStatistics {
 	 * @param addr string containing the IP address and port of the saddr record
 	 * @param currentLine line number of the record in the log file
 	 */
-	public static void treatSockaddrLine(String addr, int currentLine) {
-		sockaddrToLineNumber.put(addr,currentLine);	
+	public static void treatSockaddrLine(String addr, int currentLine, int protocol) {
+		sockaddrToLineNumber.put(addr,currentLine);
+		if(protocol == 0) { // TCP case
+			TCPsockaddrToLineNumber.put(addr,currentLine);
+		} else if(protocol == 1) { // UDP case
+			UDPsockaddrToLineNumber.put(addr,currentLine);
+		}
 	}
 
 	/**
@@ -194,13 +270,29 @@ public class netfilterDelayStatistics {
 	 */
 	public static void treatNetfilterLine(String addr, int currentLine) {
 		Integer previousLine = null;
+		Integer protocolPreviousLine = null;
 		if((previousLine = sockaddrToLineNumber.remove(addr)) != null) {
 			Integer delay = currentLine-previousLine;
-			System.out.println("Miracle: found a match! Delay = "+delay);
+			//System.out.println("Miracle: found a match! Delay = "+delay);
 			Integer Occurences = delayOccurences.remove(delay);
 			if(Occurences == null)
 				Occurences = new Integer(0);
 			delayOccurences.put(delay,++Occurences);
+			if((protocolPreviousLine = TCPsockaddrToLineNumber.remove(addr)) != null) {
+				if(protocolPreviousLine.equals(previousLine)) {
+					Occurences = TCPdelayOccurences.remove(delay);
+					if(Occurences == null)
+						Occurences = new Integer(0);
+					TCPdelayOccurences.put(delay,++Occurences);
+				}
+			} else if((protocolPreviousLine = UDPsockaddrToLineNumber.remove(addr)) != null) {
+				if(protocolPreviousLine.equals(previousLine)) {
+					Occurences = UDPdelayOccurences.remove(delay);
+					if(Occurences == null)
+						Occurences = new Integer(0);
+					UDPdelayOccurences.put(delay,++Occurences);
+				}
+			}
 		}
 	}
 
@@ -225,7 +317,7 @@ public class netfilterDelayStatistics {
 		Matcher sockaddM = saddrP.matcher(line);
 		Matcher netfilterM = netfilterP.matcher(line);
 		if(sockaddM.find()) {
-			String saddr = sockaddM.group(1);
+			String saddr = sockaddM.group(2);
 			if(saddr.length() >= 15)
 				return saddr.substring(8,16)+":"+saddr.substring(4,8);
 		} else if(netfilterM.find()) {
@@ -235,6 +327,25 @@ public class netfilterDelayStatistics {
 				res = res+String.format("%02X",Integer.valueOf(IPfields[i]));
 			}
 			return res+":"+String.format("%04X",Integer.valueOf(netfilterM.group(2)));
+		}
+		return null;
+	}
+
+	/**
+	 * Return either null or a String containing the timestamp of the record (SYSCALL or SOCKADDR)
+	 *
+	 * @param line the record line being parsed
+	 * @param syscallP SYSCALL CONNECT (42) record pattern
+	 * @param saddrP SOCKADDR record pattern
+	 * @return a string containing the timestamp of the record in line
+	 */
+	public static String parseLineToTimeStamp(String line, Pattern syscallP, Pattern saddrP) {
+		Matcher syscallM = syscallP.matcher(line);
+		Matcher sockaddM = saddrP.matcher(line);
+		if(syscallM.find()) {
+			return syscallM.group(1);
+		} else if(sockaddM.find()) {
+			return sockaddM.group(1);
 		}
 		return null;
 	}
