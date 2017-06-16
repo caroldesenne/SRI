@@ -53,6 +53,12 @@ public class netfilterDelayStatistics {
 
 	public static Map<Integer, Integer> UDPdelayOccurences = new HashMap<Integer,Integer>();
 
+	/* Map to keep track of NETFILTER packets and their respective line numbers in the log file */
+	public static Map<String, Integer> netfilterToLineNumber = new HashMap<String,Integer>();
+
+	/* Counts the number of occurences of a netfilter that comes before a syscall */
+	public static int countNetfilterBefore = 0;
+
 	/* ----------------------- FUNCTIONS --------------------------- */
 
 	public static void main(String[] args) {
@@ -78,6 +84,9 @@ public class netfilterDelayStatistics {
 		printDelayMap("delayMap",0);
 		printDelayMap("TCPdelayMap",1);
 		printDelayMap("UDPdelayMap",2);
+
+		// Number of netfilters before sockaddr
+		System.out.println("Netfilter packets before corresponding sockaddr packet: "+countNetfilterBefore);
 
 		// Calculate mean and variance for delays
 		double[] statistics = calculateStatistics();
@@ -251,6 +260,10 @@ public class netfilterDelayStatistics {
 	 * @param currentLine line number of the record in the log file
 	 */
 	public static void treatSockaddrLine(String addr, int currentLine, int protocol) {
+		if(netfilterToLineNumber.remove(addr) != null) {
+			countNetfilterBefore++;
+			return;
+		}
 		sockaddrToLineNumber.put(addr,currentLine);
 		if(protocol == 0) { // TCP case
 			TCPsockaddrToLineNumber.put(addr,currentLine);
@@ -293,6 +306,8 @@ public class netfilterDelayStatistics {
 					UDPdelayOccurences.put(delay,++Occurences);
 				}
 			}
+		} else {
+				netfilterToLineNumber.put(addr,currentLine);
 		}
 	}
 
