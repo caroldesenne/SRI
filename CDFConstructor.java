@@ -7,33 +7,34 @@ import java.util.Map;
 import java.util.HashMap;
 import javafx.application.Application;
 import javafx.scene.Scene;
-import javafx.scene.chart.BarChart;
+import javafx.scene.chart.LineChart;
 import javafx.scene.chart.NumberAxis;
 import javafx.scene.chart.CategoryAxis;
 import javafx.scene.chart.XYChart;
 import javafx.stage.Stage;
 
-public class delayChartConstructor extends Application {
+public class CDFConstructor extends Application {
 
 	public static String filename;
 	public static final String pattern = "^(\\d+)\\s:\\s(\\d+)$";
-	public static final double FRACTION = 0.93; // fraction of occurences to be taken into account in the graphic
+	public static final double FRACTION = 0.96; // fraction of occurences to be taken into account in the graphic
 	public static Map<Integer,Integer> delayOccurences = new HashMap<Integer,Integer>();
 
 	/**
-	 * 
+	 * TODO COMMENT
 	 */
 	@Override public void start(Stage stage) {
 		// General chart configuration
-		stage.setTitle("Delay-Occurences Chart");
-		final CategoryAxis xAxis = new CategoryAxis();
+		stage.setTitle("CDF: Cumulative Distribution Function");
+		final NumberAxis xAxis = new NumberAxis();
 		final NumberAxis yAxis = new NumberAxis();
-		final BarChart<String,Number> chart = new BarChart<String,Number>(xAxis,yAxis);
-		chart.setTitle("Record's Delay Distribution");
-		xAxis.setLabel("Delay");
-		yAxis.setLabel("Occurences");
+		final LineChart<Number,Number> chart = new LineChart<Number,Number>(xAxis,yAxis);
+		chart.setTitle("CDF: Cumulative Distribution Function");
+		chart.setCreateSymbols(false);
+		xAxis.setLabel("X");
+		yAxis.setLabel("Fx(X)");
 		// Series
-		XYChart.Series<String,Number> series = new XYChart.Series<String,Number>();
+		XYChart.Series<Number,Number> series = new XYChart.Series<Number,Number>();
 		constructSeries(series,FRACTION);
 		// Chart
 		Scene scene = new Scene(chart,800,600);
@@ -43,20 +44,18 @@ public class delayChartConstructor extends Application {
 	}
 
 	// TODO COMMENT
-	public static void constructSeries(XYChart.Series<String,Number> series, double fraction) {
+	public static void constructSeries(XYChart.Series<Number,Number> series, double fraction) {
 		int[] info = readMapFromFile(filename);
 		int max = info[0];
-		int total = info[1];
+		double total = (double) info[1];
 		Integer occurences;
-		int countOccurences = 0;
+		double countOccurences = 0;
 		for(int i = 1; i < max && countOccurences < fraction*total; i++) {
 			occurences = delayOccurences.get(i);
-			if(occurences == null) {
-				series.getData().add(new XYChart.Data<String,Number>(Integer.toString(i),0));
-			} else {
-				series.getData().add(new XYChart.Data<String,Number>(Integer.toString(i),occurences));
+			if(occurences != null)
 				countOccurences += occurences;
-			}
+			double prob = countOccurences/total;
+			series.getData().add(new XYChart.Data<Number,Number>(i,prob));
 		}
 	}
 
@@ -97,13 +96,13 @@ public class delayChartConstructor extends Application {
 		return info;
 	}
 
-	public static void main(String[] args) {
-		if(args.length < 1) {
-			System.out.println("Please provide the delayMap file name");
-			return;
-		}
-		filename = "/Users/carol/Documents/code/"+args[0];
-		launch(args);
+  public static void main(String[] args) {
+			if(args.length < 1) {	
+				System.out.println("Please provide the delayMap file name");
+				return;
+			}
+			filename = "/Users/carol/Documents/code/"+args[0];
+			launch(args);
 	}
 
 	/** 
@@ -118,7 +117,7 @@ public class delayChartConstructor extends Application {
 			fr = new FileReader(path);
 		} catch(IOException e) {
 			System.err.println(e.getMessage());
-			System.err.println("Couldn't open file: "+path);
+			System.err.println("Couldn't open the log file: "+path);
 		}
 		return new BufferedReader(fr);
 	}
